@@ -65,16 +65,29 @@ class TestAssembledContext:
     def test_render_order(self):
         ctx = AssembledContext(
             project_summary="1-project",
-            file_context="2-file",
-            import_context="3-import",
-            related_symbols="4-related",
+            git_diff="2-diff",
+            file_context="3-file",
+            import_context="4-import",
+            related_symbols="5-related",
         )
         rendered = ctx.render()
         proj_pos = rendered.index("1-project")
-        file_pos = rendered.index("2-file")
-        import_pos = rendered.index("3-import")
-        related_pos = rendered.index("4-related")
-        assert proj_pos < file_pos < import_pos < related_pos
+        diff_pos = rendered.index("2-diff")
+        file_pos = rendered.index("3-file")
+        import_pos = rendered.index("4-import")
+        related_pos = rendered.index("5-related")
+        assert proj_pos < diff_pos < file_pos < import_pos < related_pos
+
+    def test_render_with_git_diff(self):
+        ctx = AssembledContext(git_diff="diff --git a/foo.py")
+        rendered = ctx.render()
+        assert "## Recent Changes" in rendered
+        assert "diff --git a/foo.py" in rendered
+
+    def test_render_without_git_diff(self):
+        ctx = AssembledContext(project_summary="Project info")
+        rendered = ctx.render()
+        assert "## Recent Changes" not in rendered
 
 
 class TestContextAssembler:
@@ -164,3 +177,34 @@ class TestContextAssembler:
         rendered = result.render()
 
         assert isinstance(rendered, str)
+
+    @pytest.mark.asyncio
+    async def test_assemble_with_git_diff(self, built_index: SymbolIndex, sample_project: Path):
+        config = ContextConfig(max_context_tokens=8000, include_git_diff=True)
+        assembler = ContextAssembler(built_index, config, project_root=sample_project)
+
+        with patch("codesage.indexer.context.get_git_diff", return_value="diff --git a/foo.py"):
+            result = assembler.assemble(code="x = 1", language="python")
+
+        assert result.git_diff == "diff --git a/foo.py"
+        rendered = result.render()
+        assert "## Recent Changes" in rendered
+
+    @pytest.mark.asyncio
+    async def test_assemble_git_diff_disabled(self, built_index: SymbolIndex, sample_project: Path):
+        config = ContextConfig(max_context_tokens=8000, include_git_diff=False)
+        assembler = ContextAssembler(built_index, config, project_root=sample_project)
+
+        with patch("codesage.indexer.context.get_git_diff", return_value="some diff"):
+            result = assembler.assemble(code="x = 1", language="python")
+
+        assert result.git_diff == ""
+
+    @pytest.mark.asyncio
+    async def test_assemble_git_diff_no_project_root(self, built_index: SymbolIndex):
+        config = ContextConfig(max_context_tokens=8000, include_git_diff=True)
+        assembler = ContextAssembler(built_index, config)  # no project_root
+
+        result = assembler.assemble(code="x = 1", language="python")
+
+        assert result.git_diff == ""

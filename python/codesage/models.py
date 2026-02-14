@@ -91,3 +91,4 @@ class StreamChunk(BaseModel):
     done: bool = False
     error: str | None = None
     chunk_type: str = "content"  # "content" | "status" | "tool_call"
+    usage: TokenUsage | None = None

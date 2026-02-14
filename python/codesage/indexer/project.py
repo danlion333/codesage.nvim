@@ -103,6 +103,57 @@ class ProjectInfo:
         return "\n".join(parts)
 
 
+def get_git_diff(root: Path, max_chars: int = 10_000) -> str:
+    """Get combined git diff (unstaged + staged) for the project.
+
+    Returns combined diff output truncated to max_chars.
+    Returns empty string for non-git directories or on errors.
+    """
+    try:
+        parts: list[str] = []
+
+        # Diff stat for overview
+        stat_result = subprocess.run(
+            ["git", "diff", "--stat", "--no-color"],
+            cwd=root,
+            capture_output=True,
+            text=True,
+            timeout=5,
+        )
+        if stat_result.returncode == 0 and stat_result.stdout.strip():
+            parts.append("### Unstaged changes (summary)\n" + stat_result.stdout.strip())
+
+        # Full unstaged diff
+        diff_result = subprocess.run(
+            ["git", "diff", "--no-color"],
+            cwd=root,
+            capture_output=True,
+            text=True,
+            timeout=5,
+        )
+        if diff_result.returncode == 0 and diff_result.stdout.strip():
+            parts.append("### Unstaged diff\n```diff\n" + diff_result.stdout.strip() + "\n```")
+
+        # Staged diff
+        staged_result = subprocess.run(
+            ["git", "diff", "--staged", "--no-color"],
+            cwd=root,
+            capture_output=True,
+            text=True,
+            timeout=5,
+        )
+        if staged_result.returncode == 0 and staged_result.stdout.strip():
+            parts.append("### Staged diff\n```diff\n" + staged_result.stdout.strip() + "\n```")
+
+        combined = "\n\n".join(parts)
+        if len(combined) > max_chars:
+            combined = combined[:max_chars] + "\n... (truncated)"
+        return combined
+
+    except (subprocess.TimeoutExpired, FileNotFoundError, OSError):
+        return ""
+
+
 def detect_language(path: Path) -> str:
     """Detect language from file extension."""
     return EXTENSION_LANGUAGES.get(path.suffix.lower(), "")

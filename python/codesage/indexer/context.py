@@ -11,6 +11,7 @@ import litellm
 
 from codesage.config import ContextConfig
 from codesage.indexer.index import SymbolIndex
+from codesage.indexer.project import get_git_diff
 
 logger = logging.getLogger(__name__)
 
@@ -31,6 +32,7 @@ class AssembledContext:
     selected_code: str = ""
     file_context: str = ""
     project_summary: str = ""
+    git_diff: str = ""
     import_context: str = ""
     related_symbols: str = ""
     total_tokens: int = 0
@@ -42,6 +44,11 @@ class AssembledContext:
         if self.project_summary:
             parts.append("## Project Context")
             parts.append(self.project_summary)
+            parts.append("")
+
+        if self.git_diff:
+            parts.append("## Recent Changes")
+            parts.append(self.git_diff)
             parts.append("")
 
         if self.file_context:
@@ -74,10 +81,17 @@ class ContextAssembler:
     6. Reserve (15%): for prompt template overhead
     """
 
-    def __init__(self, index: SymbolIndex, config: ContextConfig, model: str = "") -> None:
+    def __init__(
+        self,
+        index: SymbolIndex,
+        config: ContextConfig,
+        model: str = "",
+        project_root: Path | None = None,
+    ) -> None:
         self._index = index
         self._config = config
         self._model = model or "gpt-4o-mini"
+        self._project_root = project_root
 
     def _tokens(self, text: str) -> int:
         return _count_tokens(text, self._model)
@@ -116,10 +130,11 @@ class ContextAssembler:
             return result
 
         # Budget allocations for remaining space
-        file_budget = int(available * 0.35)
-        summary_budget = int(available * 0.06)
-        import_budget = int(available * 0.30)
-        related_budget = int(available * 0.29)
+        file_budget = int(available * 0.30)
+        summary_budget = int(available * 0.05)
+        git_diff_budget = int(available * 0.10)
+        import_budget = int(available * 0.27)
+        related_budget = int(available * 0.28)
 
         total_tokens = code_tokens
 
@@ -138,14 +153,26 @@ class ContextAssembler:
                 result.project_summary = summary
                 total_tokens += summary_tokens
 
-        # 3. Import resolution
+        # 3. Git diff context
+        if self._config.include_git_diff and self._project_root:
+            diff_text = get_git_diff(self._project_root)
+            if diff_text:
+                diff_tokens = self._tokens(diff_text)
+                if diff_tokens > git_diff_budget:
+                    # Truncate to fit budget (rough char estimate)
+                    char_limit = git_diff_budget * 4
+                    diff_text = diff_text[:char_limit] + "\n... (truncated)"
+                result.git_diff = diff_text
+                total_tokens += self._tokens(diff_text)
+
+        # 4. Import resolution
         if self._config.include_imports and filepath:
             import_ctx = self._build_import_context(Path(filepath), import_budget)
             if import_ctx:
                 result.import_context = import_ctx
                 total_tokens += self._tokens(import_ctx)
 
-        # 4. Related symbols
+        # 5. Related symbols
         if self._config.include_related_symbols:
             related = self._build_related_symbols(code, filepath, related_budget)
             if related:

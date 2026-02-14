@@ -85,22 +85,32 @@ class LLMProvider:
                 max_tokens=self._config.models.max_tokens,
                 temperature=self._config.models.temperature,
                 stream=True,
+                stream_options={"include_usage": True},
             )
 
+            usage: TokenUsage | None = None
             async for chunk in response:
-                delta = chunk.choices[0].delta
+                delta = chunk.choices[0].delta if chunk.choices else None
                 content = delta.content if delta and delta.content else ""
-                finish_reason = chunk.choices[0].finish_reason
+                finish_reason = chunk.choices[0].finish_reason if chunk.choices else None
+
+                # Capture usage from the final chunk
+                if hasattr(chunk, "usage") and chunk.usage:
+                    usage = TokenUsage(
+                        prompt_tokens=chunk.usage.prompt_tokens or 0,
+                        completion_tokens=chunk.usage.completion_tokens or 0,
+                        total_tokens=chunk.usage.total_tokens or 0,
+                    )
 
                 if content:
                     yield StreamChunk(content=content)
 
                 if finish_reason is not None:
-                    yield StreamChunk(content="", done=True)
+                    yield StreamChunk(content="", done=True, usage=usage)
                     return
 
             # If we exhaust the iterator without a finish_reason
-            yield StreamChunk(content="", done=True)
+            yield StreamChunk(content="", done=True, usage=usage)
 
         except Exception as e:
             logger.error("LLM streaming error: %s", e)
@@ -151,22 +161,32 @@ class LLMProvider:
                 max_tokens=self._config.models.max_tokens,
                 temperature=self._config.models.temperature,
                 stream=True,
+                stream_options={"include_usage": True},
             )
 
+            usage: TokenUsage | None = None
             async for chunk in response:
-                delta = chunk.choices[0].delta
+                delta = chunk.choices[0].delta if chunk.choices else None
                 content = delta.content if delta and delta.content else ""
-                finish_reason = chunk.choices[0].finish_reason
+                finish_reason = chunk.choices[0].finish_reason if chunk.choices else None
+
+                # Capture usage from the final chunk
+                if hasattr(chunk, "usage") and chunk.usage:
+                    usage = TokenUsage(
+                        prompt_tokens=chunk.usage.prompt_tokens or 0,
+                        completion_tokens=chunk.usage.completion_tokens or 0,
+                        total_tokens=chunk.usage.total_tokens or 0,
+                    )
 
                 if content:
                     yield StreamChunk(content=content)
 
                 if finish_reason is not None:
-                    yield StreamChunk(content="", done=True)
+                    yield StreamChunk(content="", done=True, usage=usage)
                     return
 
             # If we exhaust the iterator without a finish_reason
-            yield StreamChunk(content="", done=True)
+            yield StreamChunk(content="", done=True, usage=usage)
 
         except Exception as e:
             logger.error("LLM streaming error: %s", e)

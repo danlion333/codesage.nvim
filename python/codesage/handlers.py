@@ -22,6 +22,7 @@ from codesage.models import (
     LLMMessage,
     LLMRequest,
     StreamChunk,
+    TokenUsage,
 )
 from codesage.tools.definitions import TOOL_SCHEMAS
 from codesage.tools.executor import ToolExecutor
@@ -45,12 +46,19 @@ class RequestHandler:
         # Load persisted sessions
         self._session_manager.load_sessions()
 
+        # Cumulative usage tracking
+        self._usage = TokenUsage()
+        self._request_count = 0
+
         self._methods = {
             "ping": self._handle_ping,
             "shutdown": self._handle_shutdown,
             "explain": self._handle_explain,
             "improve": self._handle_improve,
             "chat": self._handle_chat,
+            "config/get_model": self._handle_get_model,
+            "config/set_model": self._handle_set_model,
+            "stats/usage": self._handle_stats_usage,
             "chat/create_session": self._handle_create_session,
             "chat/list_sessions": self._handle_list_sessions,
             "chat/clear_session": self._handle_clear_session,
@@ -73,6 +81,7 @@ class RequestHandler:
             self._index,
             self._config.context,
             self._config.models.default_model,
+            project_root=root,
         )
 
     def _load_sage_md(self) -> str:
@@ -162,12 +171,16 @@ class RequestHandler:
                     if cancel_event and cancel_event.is_set():
                         yield StreamChunk(content="", done=True)
                         return
+                    if chunk.done and chunk.usage:
+                        self._accumulate_usage(chunk.usage)
                     yield chunk
             else:
                 async for chunk in self._llm.stream(llm_request):
                     if cancel_event and cancel_event.is_set():
                         yield StreamChunk(content="", done=True)
                         return
+                    if chunk.done and chunk.usage:
+                        self._accumulate_usage(chunk.usage)
                     yield chunk
         except Exception as e:
             logger.error("Stream handler error for %s: %s", request.method, e)
@@ -207,25 +220,66 @@ class RequestHandler:
                 self._index.rebuild_file(Path(filepath), language)
                 logger.debug("Re-indexed: %s", filepath)
 
+    def _accumulate_usage(self, usage: TokenUsage) -> None:
+        """Add usage stats to cumulative totals."""
+        self._usage.prompt_tokens += usage.prompt_tokens
+        self._usage.completion_tokens += usage.completion_tokens
+        self._usage.total_tokens += usage.total_tokens
+        self._request_count += 1
+
     async def _handle_ping(self, request: JsonRpcRequest) -> dict:
-        return {"status": "ok", "version": __version__}
+        return {
+            "status": "ok",
+            "version": __version__,
+            "model": self._config.models.default_model,
+            "usage": {
+                "prompt_tokens": self._usage.prompt_tokens,
+                "completion_tokens": self._usage.completion_tokens,
+                "total_tokens": self._usage.total_tokens,
+                "request_count": self._request_count,
+            },
+        }
 
     async def _handle_shutdown(self, request: JsonRpcRequest) -> dict:
         return {"status": "shutting_down"}
 
+    async def _handle_get_model(self, request: JsonRpcRequest) -> dict:
+        return {"model": self._config.models.default_model}
+
+    async def _handle_set_model(self, request: JsonRpcRequest) -> dict:
+        model = request.params.get("model", "")
+        if not model or not model.strip():
+            raise ValueError("model parameter must be a non-empty string")
+        model = model.strip()
+        self._config.models.default_model = model
+        if self._context_assembler:
+            self._context_assembler._model = model
+        return {"model": model, "status": "ok"}
+
+    async def _handle_stats_usage(self, request: JsonRpcRequest) -> dict:
+        return {
+            "prompt_tokens": self._usage.prompt_tokens,
+            "completion_tokens": self._usage.completion_tokens,
+            "total_tokens": self._usage.total_tokens,
+            "request_count": self._request_count,
+        }
+
     async def _handle_explain(self, request: JsonRpcRequest) -> dict:
         llm_request = self._build_llm_request(CommandType.explain, request.params)
         response = await self._llm.complete(llm_request)
+        self._accumulate_usage(response.usage)
         return response.model_dump()
 
     async def _handle_improve(self, request: JsonRpcRequest) -> dict:
         llm_request = self._build_llm_request(CommandType.improve, request.params)
         response = await self._llm.complete(llm_request)
+        self._accumulate_usage(response.usage)
         return response.model_dump()
 
     async def _handle_chat(self, request: JsonRpcRequest) -> dict:
         llm_request = self._build_llm_request(CommandType.chat, request.params)
         response = await self._llm.complete(llm_request)
+        self._accumulate_usage(response.usage)
         return response.model_dump()
 
     # --- Chat session methods ---
@@ -372,6 +426,8 @@ class RequestHandler:
                         break
                     if chunk.content and chunk.chunk_type == "content":
                         full_response += chunk.content
+                    if chunk.done and chunk.usage:
+                        self._accumulate_usage(chunk.usage)
                     yield chunk
             else:
                 async for chunk in self._llm.stream_messages(messages):
@@ -381,6 +437,8 @@ class RequestHandler:
                         break
                     if chunk.content:
                         full_response += chunk.content
+                    if chunk.done and chunk.usage:
+                        self._accumulate_usage(chunk.usage)
                     yield chunk
         except Exception as e:
             logger.error("Chat stream error: %s", e)

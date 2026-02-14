@@ -9,6 +9,15 @@ M.config = {
     explain = "<leader>ce",
     improve = "<leader>ci",
     chat = "<leader>cc",
+    switch_model = "<leader>cm",
+    palette = "<leader>cs",
+  },
+  models = {
+    "anthropic/claude-sonnet-4-20250514",
+    "anthropic/claude-haiku-4-20250514",
+    "openai/gpt-4o",
+    "openai/gpt-4o-mini",
+    "google/gemini-2.0-flash",
   },
   ui = {
     width = 0.7,
@@ -117,6 +126,22 @@ function M._setup_keymaps()
   -- Visual mode chat keymap (sends selection)
   vim.keymap.set("v", km.chat, ":'<,'>CodeSageChat<CR>", {
     desc = "CodeSage: Chat with selection",
+    silent = true,
+  })
+
+  -- Model switching
+  vim.keymap.set("n", km.switch_model, ":CodeSageSwitchModel<CR>", {
+    desc = "CodeSage: Switch model",
+    silent = true,
+  })
+
+  -- Command palette (normal + visual)
+  vim.keymap.set("n", km.palette, ":CodeSagePalette<CR>", {
+    desc = "CodeSage: Command palette",
+    silent = true,
+  })
+  vim.keymap.set("v", km.palette, ":'<,'>CodeSagePalette<CR>", {
+    desc = "CodeSage: Command palette",
     silent = true,
   })
 end

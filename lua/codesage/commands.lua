@@ -147,8 +147,13 @@ function M.register()
           vim.notify("[CodeSage] Backend error: " .. (msg or "Unknown error"), vim.log.levels.ERROR)
         else
           local result = response.result
+          local model = result.model or "unknown"
+          local tokens = 0
+          if result.usage then
+            tokens = result.usage.total_tokens or 0
+          end
           vim.notify(
-            string.format("[CodeSage] Connected - v%s", result.version),
+            string.format("[CodeSage] Connected - v%s | Model: %s | Tokens: %d", result.version, model, tokens),
             vim.log.levels.INFO
           )
         end
@@ -156,6 +161,66 @@ function M.register()
     end)
   end, {
     desc = "Show CodeSage backend status",
+  })
+
+  vim.api.nvim_create_user_command("CodeSageSwitchModel", function()
+    local codesage = require("codesage")
+    local rpc = require("codesage.rpc")
+
+    codesage.ensure_backend(function()
+      rpc.request("config/get_model", {}, function(response)
+        vim.schedule(function()
+          if response.error and response.error ~= vim.NIL then
+            vim.notify("[CodeSage] Failed to get current model", vim.log.levels.ERROR)
+            return
+          end
+
+          local current_model = response.result.model
+          local models = codesage.config.models or {}
+
+          -- Build display list marking current model
+          local items = {}
+          for _, m in ipairs(models) do
+            if m == current_model then
+              table.insert(items, m .. " (current)")
+            else
+              table.insert(items, m)
+            end
+          end
+
+          vim.ui.select(items, { prompt = "Switch Model:" }, function(choice)
+            if not choice then
+              return
+            end
+            -- Strip " (current)" suffix if present
+            local model = choice:gsub(" %(current%)$", "")
+            rpc.request("config/set_model", { model = model }, function(set_response)
+              vim.schedule(function()
+                if set_response.error and set_response.error ~= vim.NIL then
+                  vim.notify("[CodeSage] Failed to switch model", vim.log.levels.ERROR)
+                else
+                  vim.notify("[CodeSage] Model switched to: " .. model, vim.log.levels.INFO)
+                end
+              end)
+            end)
+          end)
+        end)
+      end)
+    end)
+  end, {
+    desc = "Switch CodeSage LLM model",
+  })
+
+  vim.api.nvim_create_user_command("CodeSagePalette", function(opts)
+    local palette = require("codesage.palette")
+    if opts.range == 2 then
+      palette.open({ opts.line1, opts.line2 })
+    else
+      palette.open()
+    end
+  end, {
+    range = true,
+    desc = "Open CodeSage command palette",
   })
 end
 

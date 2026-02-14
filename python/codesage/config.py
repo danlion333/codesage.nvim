@@ -29,6 +29,7 @@ class ContextConfig(BaseModel):
     include_symbols: bool = True
     include_project_summary: bool = True
     include_related_symbols: bool = True
+    include_git_diff: bool = True
     max_file_tokens: int = 2000
 
 

@@ -11,6 +11,7 @@ from codesage.indexer.project import (
     ProjectInfo,
     ProjectScanner,
     detect_language,
+    get_git_diff,
 )
 
 
@@ -145,6 +146,73 @@ class TestProjectInfo:
         assert "Files: 2" in summary
         assert "python" in summary
         assert "javascript" in summary
+
+
+class TestGetGitDiff:
+    def test_non_git_dir_returns_empty(self, tmp_path: Path):
+        result = get_git_diff(tmp_path)
+        assert result == ""
+
+    def test_truncation(self, tmp_path: Path):
+        result = get_git_diff(tmp_path, max_chars=10)
+        # Non-git dir returns "" before truncation matters
+        assert result == ""
+
+    def test_git_diff_with_changes(self, tmp_path: Path):
+        """Test get_git_diff on a real git repo with changes."""
+        import subprocess
+
+        # Initialize a git repo
+        subprocess.run(["git", "init"], cwd=tmp_path, capture_output=True)
+        subprocess.run(
+            ["git", "config", "user.email", "test@test.com"],
+            cwd=tmp_path, capture_output=True,
+        )
+        subprocess.run(
+            ["git", "config", "user.name", "Test"],
+            cwd=tmp_path, capture_output=True,
+        )
+
+        # Create and commit a file
+        (tmp_path / "test.py").write_text("x = 1\n")
+        subprocess.run(["git", "add", "."], cwd=tmp_path, capture_output=True)
+        subprocess.run(
+            ["git", "commit", "-m", "initial"],
+            cwd=tmp_path, capture_output=True,
+        )
+
+        # Make a change
+        (tmp_path / "test.py").write_text("x = 2\n")
+
+        result = get_git_diff(tmp_path)
+        assert "test.py" in result
+
+    def test_git_diff_truncation_large_diff(self, tmp_path: Path):
+        """Test that large diffs are truncated."""
+        import subprocess
+
+        subprocess.run(["git", "init"], cwd=tmp_path, capture_output=True)
+        subprocess.run(
+            ["git", "config", "user.email", "test@test.com"],
+            cwd=tmp_path, capture_output=True,
+        )
+        subprocess.run(
+            ["git", "config", "user.name", "Test"],
+            cwd=tmp_path, capture_output=True,
+        )
+
+        (tmp_path / "big.py").write_text("x = 1\n")
+        subprocess.run(["git", "add", "."], cwd=tmp_path, capture_output=True)
+        subprocess.run(
+            ["git", "commit", "-m", "initial"],
+            cwd=tmp_path, capture_output=True,
+        )
+
+        # Write a large change
+        (tmp_path / "big.py").write_text("y = 2\n" * 1000)
+
+        result = get_git_diff(tmp_path, max_chars=100)
+        assert len(result) <= 120  # 100 + "... (truncated)" suffix
 
 
 class TestAsyncScan:

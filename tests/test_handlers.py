@@ -34,6 +34,10 @@ class TestDispatch:
         assert response.error is None
         assert response.result["status"] == "ok"
         assert response.result["version"] == "0.1.0"
+        assert response.result["model"] == "gpt-4o-mini"
+        assert "usage" in response.result
+        assert response.result["usage"]["total_tokens"] == 0
+        assert response.result["usage"]["request_count"] == 0
         assert response.id == 1
 
     @pytest.mark.asyncio
@@ -136,3 +140,97 @@ class TestDispatchStream:
         assert len(chunks) == 1
         assert chunks[0].error is not None
         assert chunks[0].done is True
+
+
+class TestModelSwitching:
+    @pytest.mark.asyncio
+    async def test_get_model(self, handler: RequestHandler):
+        request = JsonRpcRequest(method="config/get_model", id=10)
+        response = await handler.dispatch(request)
+        assert response.error is None
+        assert response.result["model"] == "gpt-4o-mini"
+
+    @pytest.mark.asyncio
+    async def test_set_model(self, handler: RequestHandler):
+        request = JsonRpcRequest(
+            method="config/set_model",
+            params={"model": "anthropic/claude-haiku-4-20250514"},
+            id=11,
+        )
+        response = await handler.dispatch(request)
+        assert response.error is None
+        assert response.result["model"] == "anthropic/claude-haiku-4-20250514"
+        assert response.result["status"] == "ok"
+
+        # Verify persistence
+        get_request = JsonRpcRequest(method="config/get_model", id=12)
+        get_response = await handler.dispatch(get_request)
+        assert get_response.result["model"] == "anthropic/claude-haiku-4-20250514"
+
+    @pytest.mark.asyncio
+    async def test_set_model_empty(self, handler: RequestHandler):
+        request = JsonRpcRequest(
+            method="config/set_model",
+            params={"model": ""},
+            id=13,
+        )
+        response = await handler.dispatch(request)
+        assert response.error is not None
+        assert response.error.code == -32000
+
+
+class TestUsageTracking:
+    @pytest.mark.asyncio
+    async def test_usage_tracking(self, handler: RequestHandler):
+        mock_response1 = LLMResponse(
+            content="Response 1",
+            model="gpt-4o-mini",
+            usage=TokenUsage(prompt_tokens=10, completion_tokens=20, total_tokens=30),
+        )
+        mock_response2 = LLMResponse(
+            content="Response 2",
+            model="gpt-4o-mini",
+            usage=TokenUsage(prompt_tokens=15, completion_tokens=25, total_tokens=40),
+        )
+
+        with patch.object(handler._llm, "complete", new_callable=AsyncMock) as mock:
+            mock.return_value = mock_response1
+            await handler.dispatch(
+                JsonRpcRequest(method="explain", params={"code": "x = 1"}, id=20)
+            )
+
+            mock.return_value = mock_response2
+            await handler.dispatch(
+                JsonRpcRequest(method="explain", params={"code": "y = 2"}, id=21)
+            )
+
+        # Check cumulative usage via stats/usage
+        stats_response = await handler.dispatch(
+            JsonRpcRequest(method="stats/usage", id=22)
+        )
+        assert stats_response.error is None
+        assert stats_response.result["prompt_tokens"] == 25
+        assert stats_response.result["completion_tokens"] == 45
+        assert stats_response.result["total_tokens"] == 70
+        assert stats_response.result["request_count"] == 2
+
+    @pytest.mark.asyncio
+    async def test_ping_includes_usage(self, handler: RequestHandler):
+        mock_response = LLMResponse(
+            content="test",
+            model="gpt-4o-mini",
+            usage=TokenUsage(prompt_tokens=5, completion_tokens=10, total_tokens=15),
+        )
+
+        with patch.object(handler._llm, "complete", new_callable=AsyncMock) as mock:
+            mock.return_value = mock_response
+            await handler.dispatch(
+                JsonRpcRequest(method="explain", params={"code": "x"}, id=30)
+            )
+
+        ping_response = await handler.dispatch(
+            JsonRpcRequest(method="ping", id=31)
+        )
+        assert ping_response.result["model"] == "gpt-4o-mini"
+        assert ping_response.result["usage"]["total_tokens"] == 15
+        assert ping_response.result["usage"]["request_count"] == 1
