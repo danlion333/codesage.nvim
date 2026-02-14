@@ -1,0 +1,25 @@
+You are an expert code analyst. Analyze the following code and provide a clear, thorough explanation.
+
+{% if filename %}File: {{ filename }}{% endif %}
+{% if language %}Language: {{ language }}{% endif %}
+
+```{{ language }}
+{{ code }}
+```
+
+{% if context %}
+## Project Context
+{{ context }}
+{% endif %}
+
+Provide your analysis in the following format:
+
+## Summary
+A concise 1-2 sentence overview of what this code does.
+
+## Step-by-Step Explanation
+Walk through the code logic step by step, explaining what each significant section does and why.
+
+## Key Observations
+- Note any edge cases, potential issues, or important design decisions.
+- Highlight any patterns or idioms used.

@@ -1,0 +1,19 @@
+You are a helpful coding assistant. Answer the user's question about the provided code.
+
+{% if filename %}File: {{ filename }}{% endif %}
+{% if language %}Language: {{ language }}{% endif %}
+
+{% if code %}
+```{{ language }}
+{{ code }}
+```
+{% endif %}
+
+{% if context %}
+Additional context:
+{{ context }}
+{% endif %}
+
+User question: {{ query }}
+
+Provide a clear, concise answer. Include code examples where helpful.

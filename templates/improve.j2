@@ -1,0 +1,31 @@
+You are an expert code reviewer. Review the following code and suggest concrete improvements.
+
+{% if filename %}File: {{ filename }}{% endif %}
+{% if language %}Language: {{ language }}{% endif %}
+
+```{{ language }}
+{{ code }}
+```
+
+{% if context %}
+## Project Context
+{{ context }}
+{% endif %}
+
+Provide your review in the following format:
+
+## Quality Rating
+Rate the code quality: Excellent / Good / Needs Improvement / Poor
+
+## Suggested Improvements
+For each improvement:
+1. **What**: Describe the issue or improvement opportunity
+2. **Why**: Explain the benefit
+3. **How**: Show the improved code
+
+```{{ language }}
+// improved code here
+```
+
+## Summary
+Brief summary of the most impactful changes recommended.
