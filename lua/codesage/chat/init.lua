@@ -8,6 +8,38 @@ local history_mod = require("codesage.chat.history")
 local scrollbar_mod = require("codesage.chat.scrollbar")
 local help = require("codesage.chat.help")
 
+local SESSION_FILE = vim.fn.stdpath("data") .. "/codesage/session_id"
+
+--- Load persisted session ID from disk
+---@return string|nil
+local function load_session_id()
+  local session_file = io.open(SESSION_FILE, "r")
+  if not session_file then
+    return nil
+  end
+  local session_id = session_file:read("*a"):match("^%s*(.-)%s*$")
+  session_file:close()
+  if session_id == "" then
+    return nil
+  end
+  return session_id
+end
+
+--- Persist session ID to disk
+---@param session_id string|nil
+local function save_session_id(session_id)
+  -- Ensure directory exists
+  vim.fn.mkdir(vim.fn.fnamemodify(SESSION_FILE, ":p:h"), "p")
+  if session_id then
+    local f = io.open(SESSION_FILE, "w")
+    if f then
+      f:write(session_id)
+      f:close()
+    end
+  else
+    vim.fn.delete(SESSION_FILE)
+  end
+end
 --- State
 local current_session_id = nil
 local layout = nil
@@ -478,6 +510,7 @@ function M.open(selection)
   -- Start in insert mode
   vim.cmd("startinsert")
 
+  current_session_id = load_session_id()
   -- Create or reuse session
   codesage.ensure_backend(function()
     if not current_session_id then
@@ -489,12 +522,13 @@ function M.open(selection)
       end
 
       rpc.request("chat/create_session", params, function(response)
-        vim.schedule(function()
-          if response.result then
-            current_session_id = response.result.session_id
-          end
-        end)
-      end)
+  		vim.schedule(function()
+    	  if response.result then
+      		current_session_id = response.result.session_id
+      		  save_session_id(current_session_id)  -- Add this line
+    		end
+  		  end)
+	  end)
     else
       -- Restore previous messages into the UI
       rpc.request("chat/get_session_messages", { session_id = current_session_id }, function(response)
@@ -548,7 +582,7 @@ end
 function M.new_session()
   close_chat()
   current_session_id = nil
-  M.open()
+  save_session_id(nil)  -- Add this line
 end
 
 --- Stop the current generation (for use as a command)

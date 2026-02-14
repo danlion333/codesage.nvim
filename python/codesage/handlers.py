@@ -75,12 +75,12 @@ class RequestHandler:
             self._config.models.default_model,
         )
 
-     def _load_sage_md(self) -> str:
-    """Load SAGE.md from project root if it exists.
+    def _load_sage_md(self) -> str:
+        """Load SAGE.md from project root if it exists.
     
-    Returns:
+        Returns:
         Content of SAGE.md if found, empty string otherwise.
-    """
+        """
         if self._project_root is None:
             return ""
     
@@ -90,7 +90,8 @@ class RequestHandler:
                 return sage_path.read_text(encoding="utf-8")
             except Exception as e:
                 logger.warning("Failed to read SAGE.md: %s", e)
-        return ""   
+        return ""
+  
 
     async def dispatch(self, request: JsonRpcRequest) -> JsonRpcResponse:
         """Dispatch a non-streaming JSON-RPC request."""
@@ -321,13 +322,23 @@ class RequestHandler:
         }
 
         # Add project context if available
+        sage_content = self._load_sage_md()
+
+        # Add project context if available
+        project_context = ""
         if self._context_assembler and self._index.is_built and session.attached_code:
             assembled = self._context_assembler.assemble(
                 code=session.attached_code,
                 filepath=session.attached_filename,
                 language=session.attached_language,
             )
-            sys_vars["context"] = assembled.render()
+            project_context = assembled.render()
+
+        # Combine SAGE.md with project context
+        if sage_content:
+            sys_vars["context"] = f"## SAGE.md\n\n{sage_content}\n\n{project_context}"
+        elif project_context:
+            sys_vars["context"] = project_context
 
         sys_template = self._prompt_manager._env.get_template("system_chat.j2")
         system_content = sys_template.render(**sys_vars)
