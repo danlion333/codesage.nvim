@@ -9,6 +9,11 @@ dist/
 build/
 .eggs/
 
+# Environment / secrets
+.env
+.env.*
+!.env.example
+
 # Virtual environments
 .venv/
 venv/
@@ -37,3 +42,5 @@ uv.lock
 # CodeSage specific
 *.sock
 .codesage.toml
+*.log
+sessions/
